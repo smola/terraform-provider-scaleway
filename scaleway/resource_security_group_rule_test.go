@@ -71,9 +71,14 @@ func testAccCheckScalewaySecurityGroupsExists(n string, group *api.SecurityGroup
 		}
 
 		conn := testAccProvider.Meta().(*Client).scaleway
-		resp, err := conn.GetASecurityGroup(rs.Primary.ID)
-
-		if err != nil {
+		var (
+			resp *api.GetSecurityGroup
+			err  error
+		)
+		if err = retry(func() error {
+			resp, err = conn.GetASecurityGroup(rs.Primary.ID)
+			return err
+		}); err != nil {
 			return err
 		}
 
@@ -94,14 +99,23 @@ func testAccCheckScalewaySecurityGroupRuleDestroy(s *terraform.State) error {
 			continue
 		}
 
-		groups, err := client.GetSecurityGroups()
-		if err != nil {
+		var (
+			groups *api.GetSecurityGroups
+			err    error
+		)
+		if err = retry(func() error {
+			groups, err = client.GetSecurityGroups()
+			return err
+		}); err != nil {
 			return err
 		}
 
 		all_err := true
 		for _, group := range groups.SecurityGroups {
-			_, err := client.GetASecurityGroupRule(group.ID, rs.Primary.ID)
+			err := retry(func() error {
+				_, err := client.GetASecurityGroupRule(group.ID, rs.Primary.ID)
+				return err
+			})
 			all_err = all_err && err != nil
 		}
 
@@ -121,8 +135,14 @@ func testAccCheckScalewaySecurityGroupRuleAttributes(n string, group *api.Securi
 		}
 
 		client := testAccProvider.Meta().(*Client).scaleway
-		rule, err := client.GetASecurityGroupRule(group.ID, rs.Primary.ID)
-		if err != nil {
+		var (
+			rule *api.GetSecurityGroupRule
+			err  error
+		)
+		if err = retry(func() error {
+			rule, err = client.GetASecurityGroupRule(group.ID, rs.Primary.ID)
+			return err
+		}); err != nil {
 			return err
 		}
 
@@ -159,9 +179,14 @@ func testAccCheckScalewaySecurityGroupRuleExists(n string, group *api.SecurityGr
 		}
 
 		client := testAccProvider.Meta().(*Client).scaleway
-		rule, err := client.GetASecurityGroupRule(group.ID, rs.Primary.ID)
-
-		if err != nil {
+		var (
+			rule *api.GetSecurityGroupRule
+			err  error
+		)
+		if err = retry(func() error {
+			rule, err = client.GetASecurityGroupRule(group.ID, rs.Primary.ID)
+			return err
+		}); err != nil {
 			return err
 		}
 

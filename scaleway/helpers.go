@@ -48,9 +48,9 @@ func validateVolumeType(v interface{}, k string) (ws []string, errors []error) {
 
 // deleteRunningServer terminates the server and waits until it is removed.
 func deleteRunningServer(scaleway *api.API, server *api.Server) error {
-	err := scaleway.PostServerAction(server.Identifier, "terminate")
-
-	if err != nil {
+	if err := retry(func() error {
+		return scaleway.PostServerAction(server.Identifier, "terminate")
+	}); err != nil {
 		if serr, ok := err.(api.APIError); ok {
 			if serr.StatusCode == 404 {
 				return nil
@@ -68,7 +68,9 @@ const maxPoweronRetries = 3
 func poweronServer(scaleway *api.API, id string) error {
 	var err error
 	for i := 0; i < maxPoweronRetries; i++ {
-		err = scaleway.PostServerAction(id, "poweron")
+		err = retry(func() error {
+			return scaleway.PostServerAction(id, "poweron")
+		})
 		if err != nil {
 			return err
 		}
@@ -87,12 +89,16 @@ func poweronServer(scaleway *api.API, id string) error {
 // deleteStoppedServer needs to cleanup attached root volumes. this is not done
 // automatically by Scaleway
 func deleteStoppedServer(scaleway *api.API, server *api.Server) error {
-	if err := scaleway.DeleteServer(server.Identifier); err != nil {
+	if err := retry(func() error {
+		return scaleway.DeleteServer(server.Identifier)
+	}); err != nil {
 		return err
 	}
 
 	if rootVolume, ok := server.Volumes["0"]; ok {
-		if err := scaleway.DeleteVolume(rootVolume.Identifier); err != nil {
+		if err := retry(func() error {
+			return scaleway.DeleteVolume(rootVolume.Identifier)
+		}); err != nil {
 			return err
 		}
 	}
@@ -120,9 +126,14 @@ func waitForServerState(scaleway *api.API, serverID, targetState string) error {
 		Pending: pending,
 		Target:  []string{targetState},
 		Refresh: func() (interface{}, string, error) {
-			s, err := scaleway.GetServer(serverID)
-
-			if err == nil {
+			var (
+				s   *api.Server
+				err error
+			)
+			if err := retry(func() error {
+				s, err = scaleway.GetServer(serverID)
+				return err
+			}); err == nil {
 				return 42, s.State, nil
 			}
 
@@ -143,4 +154,27 @@ func waitForServerState(scaleway *api.API, serverID, targetState string) error {
 	}
 	_, err := stateConf.WaitForState()
 	return err
+}
+
+const (
+	rateLimitTimeout    = 1 * time.Minute
+	rateLimitStatusCode = 429
+)
+
+func retry(f func() error) error {
+	return resource.Retry(rateLimitTimeout, func() *resource.RetryError {
+		err := f()
+		if err == nil {
+			return nil
+		}
+
+		if err, ok := err.(api.APIError); ok {
+			if err.StatusCode == rateLimitStatusCode {
+				log.Printf("[DEBUG] Got status code %d, retrying.", err.StatusCode)
+				return resource.RetryableError(err)
+			}
+		}
+
+		return resource.NonRetryableError(err)
+	})
 }
