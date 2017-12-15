@@ -83,10 +83,15 @@ func deleteStoppedServer(scaleway *api.API, server *api.Server) error {
 var allStates = []string{"starting", "running", "stopping", "stopped"}
 
 func waitForServerState(scaleway *api.API, serverID, targetState string) error {
+	// all states up to the target state are valid
+	// if we get past the desired state (e.g. stopping if we want running)
+	// it is a non-retryable error.
 	pending := []string{}
 	for _, state := range allStates {
 		if state != targetState {
 			pending = append(pending, state)
+		} else {
+			break
 		}
 	}
 	stateConf := &resource.StateChangeConf{
