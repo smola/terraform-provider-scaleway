@@ -2,6 +2,7 @@ package scaleway
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -60,6 +61,27 @@ func deleteRunningServer(scaleway *api.API, server *api.Server) error {
 	}
 
 	return waitForServerState(scaleway, server.Identifier, "stopped")
+}
+
+const maxPoweronRetries = 3
+
+func poweronServer(scaleway *api.API, id string) error {
+	var err error
+	for i := 0; i < maxPoweronRetries; i++ {
+		err = scaleway.PostServerAction(id, "poweron")
+		if err != nil {
+			return err
+		}
+
+		err = waitForServerState(scaleway, id, "running")
+		if err == nil {
+			return nil
+		}
+
+		log.Printf("[DEBUG] Poweron failed: %s", err)
+	}
+
+	return err
 }
 
 // deleteStoppedServer needs to cleanup attached root volumes. this is not done
